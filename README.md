@@ -8,10 +8,10 @@ When deploying new application versions, downtime can disrupt users. Additionall
 ## Architecture
 
 ```text
-Git Push  →  Jenkins Pipeline  →  Build Docker Image  →  Update K8s Deployment
-                                                                ↓
-[If Rollout Fails (Health Check)] ← ← ← ← ← ← ← ← ← ← ← [Verify Rollout Status]
-         ↓                                                      ↓
+Git Push  ->  Jenkins Pipeline  ->  Build Docker Image  ->  Update K8s Deployment
+                                                                |
+[If Rollout Fails (Health Check)] <- <- <- <- <- <- <- <- [Verify Rollout Status]
+         |                                                      |
 [Auto-Rollback via Jenkins]                             [Traffic Shifted to New Pods]
 ```
 
