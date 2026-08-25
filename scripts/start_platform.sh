@@ -28,13 +28,11 @@ if docker ps -a --format '{{.Names}}' | grep -q "^jenkins$"; then
   docker rm -f jenkins
 fi
 
-# Ensure my-jenkins image exists
 if ! docker images | grep -q "my-jenkins"; then
   echo "Building custom Jenkins image..."
   docker build -f jenkins.Dockerfile -t my-jenkins .
 fi
 
-# Generate kubeconfig for Jenkins to use host.docker.internal and skip TLS verify
 kind get kubeconfig | sed 's/127.0.0.1/host.docker.internal/g' | sed 's/certificate-authority-data: .*/insecure-skip-tls-verify: true/g' > ~/.kube/config_jenkins
 
 docker run -d --name jenkins -u root -p 8080:8080 -p 50000:50000 \

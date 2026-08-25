@@ -7,7 +7,7 @@ pipeline {
         DOCKER_IMAGE = "${APP_NAME}:${IMAGE_TAG}"
     }
 
-    stages {
+    stages { 
         stage('Checkout') {
             steps {
                 checkout scm
@@ -31,8 +31,6 @@ pipeline {
         
         stage('Load Image (Kind)') {
             steps {
-                // If using kind cluster, we need to load the image into the cluster.
-                // We wrap this so it doesn't fail if the user is not using Kind.
                 catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
                     sh "kind load docker-image ${DOCKER_IMAGE} || true"
                 }
@@ -53,12 +51,10 @@ pipeline {
             steps {
                 echo "Waiting for rollout to complete..."
                 script {
-                    // Check if deployment finishes successfully within 60s
-                    // If pods fail health checks, rollout status will fail (return != 0)
                     def rolloutStatus = sh(script: "kubectl rollout status deployment/${APP_NAME} --timeout=60s", returnStatus: true)
                     
                     if (rolloutStatus != 0) {
-                        error("Rollout failed or timed out (pods might be unhealthy). Initiating rollback...")
+                        error("Rollout failed or timed out. Initiating rollback...")
                     }
                 }
             }
