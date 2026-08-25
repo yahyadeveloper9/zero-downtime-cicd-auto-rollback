@@ -34,8 +34,8 @@ if ! docker images | grep -q "my-jenkins"; then
   docker build -f jenkins.Dockerfile -t my-jenkins .
 fi
 
-# Generate kubeconfig for Jenkins to use host.docker.internal
-kind get kubeconfig | sed 's/127.0.0.1/host.docker.internal/g' > ~/.kube/config_jenkins
+# Generate kubeconfig for Jenkins to use host.docker.internal and skip TLS verify
+kind get kubeconfig | sed 's/127.0.0.1/host.docker.internal/g' | sed 's/certificate-authority-data: .*/insecure-skip-tls-verify: true/g' > ~/.kube/config_jenkins
 
 docker run -d --name jenkins -p 8080:8080 -p 50000:50000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
