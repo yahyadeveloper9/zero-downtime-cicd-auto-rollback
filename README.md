@@ -79,7 +79,7 @@ docker run -d --name jenkins --network host \
 3. Under **Pipeline**, set **Definition** to `Pipeline script from SCM`.
 4. Set **SCM** to `Git`.
 5. Enter the Repository URL: `https://github.com/yahyadeveloper9/zero-downtime-cicd-auto-rollback.git` (Use HTTPS for easy local polling, or configure SSH credentials).
-6. Set **Branch Specifier** to `*/master` (or main, check your repo default).
+6. Set **Branch Specifier** to `*/main`.
 7. Save the job.
 
 ---
@@ -112,7 +112,7 @@ kubectl get pods -l app=zero-downtime-app -o wide
    ```bash
    git add app/config.json
    git commit -m "Deploy v2"
-   git push origin master
+   git push origin main
    ```
 3. Jenkins will automatically detect the push within 60 seconds and start the build.
 4. Refresh `http://localhost:30080` and watch it transition seamlessly to `v2` without dropping connections.
@@ -150,7 +150,7 @@ Let's intentionally deploy a fatal version to prove Jenkins auto-rollback works.
    ```bash
    git add app/config.json
    git commit -m "Deploy broken v3 release"
-   git push origin master
+   git push origin main
    ```
 
 ### STEP 14: Demonstrate Rollback
