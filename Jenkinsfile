@@ -14,6 +14,14 @@ pipeline {
             }
         }
 
+        stage('Validate') {
+            steps {
+                echo "Validating application syntax..."
+                sh 'npm install --production --prefix app'
+                sh 'node --check app/server.js'
+            }
+        }
+
         stage('Build Image') {
             steps {
                 echo "Building Docker image: ${DOCKER_IMAGE}"
@@ -34,8 +42,7 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 echo "Deploying to Kubernetes..."
-                // Update deployment with the new image tag
-                sh "sed -i 's|image: zero-downtime-app:latest|image: ${DOCKER_IMAGE}|' k8s/deployment.yaml"
+                sh "sed -i 's|image: ${APP_NAME}:.*|image: ${DOCKER_IMAGE}|' k8s/deployment.yaml"
                 
                 sh "kubectl apply -f k8s/deployment.yaml"
                 sh "kubectl apply -f k8s/service.yaml"
