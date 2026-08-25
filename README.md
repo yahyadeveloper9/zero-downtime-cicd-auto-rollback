@@ -2,9 +2,6 @@
 
 This project showcases a complete, locally-runnable CI/CD pipeline featuring zero-downtime deployments, self-healing, and automatic rollback on failure using Docker, Kubernetes, and Jenkins.
 
-## Problem Solved
-When deploying new application versions, downtime can disrupt users. Additionally, deploying broken code can cause outages. This project demonstrates how Kubernetes maintains availability during pod failures (self-healing/failover) and how a Jenkins CI/CD pipeline protects the environment by automatically rolling back unhealthy releases.
-
 ## Architecture
 
 ```text
@@ -15,24 +12,31 @@ Git Push  ->  Jenkins Pipeline  ->  Build Docker Image  ->  Update K8s Deploymen
 [Auto-Rollback via Jenkins]                             [Traffic Shifted to New Pods]
 ```
 
-## Technologies
-- Linux
-- Git / GitHub
-- Jenkins (CI/CD)
-- Docker (Containerization)
-- Kubernetes (Orchestration - via Kind or Docker Desktop)
-- Node.js (Application)
+## Local Setup (WSL2 / Ubuntu)
+For the best experience on Windows, we strongly recommend running all commands inside **WSL Ubuntu** (not PowerShell), as Docker and Kubernetes tools integrate seamlessly here.
 
-## Prerequisites
-- **Docker** installed and running.
-- **Kubernetes cluster** running locally (e.g., [Kind](https://kind.sigs.k8s.io/) or Docker Desktop with Kubernetes enabled).
-- **kubectl** installed.
-- **Jenkins** running locally with Docker and kubectl accessible.
+### STEP 1 & 2: Start and Verify Docker
+1. Start **Docker Desktop** (ensure WSL2 integration is enabled for your Ubuntu distro).
+2. Open your **WSL Ubuntu** terminal and verify:
+   ```bash
+   docker info
+   ```
 
-## Setup Instructions
+### STEP 3: Install/Verify kind and kubectl
+If you don't have them in your WSL environment, install them:
+```bash
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
-### 1. Start Local Kubernetes Cluster
-If using `kind`, create a cluster and map port 30080:
+# Install kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+```
+
+### STEP 4: Create the kind Cluster
+Create a cluster that maps port `30080` so we can view the app in our browser:
 ```bash
 cat <<EOF | kind create cluster --config=-
 kind: Cluster
@@ -46,102 +50,126 @@ nodes:
 EOF
 ```
 
-### 2. Jenkins Setup
-You can run Jenkins via Docker with access to the host's Docker socket and kubectl. 
-*(Note: Running Jenkins locally as a service or using a customized Jenkins Docker image with `docker` and `kubectl` installed is required).*
+### STEP 5: Start Jenkins Correctly
+Standard Jenkins doesn't have Docker, kubectl, or kind. We have provided a `jenkins.Dockerfile` that includes these.
+In **WSL Ubuntu**, run:
+```bash
+# Build the custom Jenkins image
+docker build -f jenkins.Dockerfile -t my-jenkins .
 
-### 3. Connect Repository
-Create a pipeline job in Jenkins pointing to this Git repository and the `Jenkinsfile` at the root.
+# Run Jenkins on the host network to easily access kind, and mount the Docker socket and kubeconfig
+docker run -d --name jenkins --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v ~/.kube:/var/jenkins_home/.kube \
+  my-jenkins
+```
+*(Wait 1-2 minutes for Jenkins to fully start).*
 
-### 4. Access the Application
-The application is exposed via a NodePort service on port `30080`.
-URL: `http://localhost:30080`
+### STEP 6: Open Jenkins and Perform Setup
+1. Get your initial admin password:
+   ```bash
+   docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+   ```
+2. Open `http://localhost:8080` in your Windows browser.
+3. Paste the password, select **Install suggested plugins**, and create an admin user.
+
+### STEP 7: Create the Pipeline Job
+1. In Jenkins, click **New Item** -> Name it `zero-downtime-app` -> **Pipeline** -> OK.
+2. Under **Build Triggers**, check **Poll SCM** and enter `* * * * *` (this checks Git every minute, acting as our local webhook alternative).
+3. Under **Pipeline**, set **Definition** to `Pipeline script from SCM`.
+4. Set **SCM** to `Git`.
+5. Enter the Repository URL: `https://github.com/yahyadeveloper9/zero-downtime-cicd-auto-rollback.git` (Use HTTPS for easy local polling, or configure SSH credentials).
+6. Set **Branch Specifier** to `*/master` (or main, check your repo default).
+7. Save the job.
 
 ---
 
-## Demos
+## Testing the Platform
 
-### Demo 1: Successful v1 Deployment
-1. Ensure the `app/server.js` has `const version = process.env.APP_VERSION || 'v1';`.
-2. Commit and push the code:
-   ```bash
-   git add .
-   git commit -m "Deploy v1"
-   git push origin main
+### STEP 8: Deploy Healthy v1
+The repository defaults to `v1` in `app/config.json`.
+1. In Jenkins, click **Build Now** to run the pipeline for the first time.
+2. The pipeline will checkout, build, load into kind, deploy, and verify.
+
+### STEP 9: Verify v1 Deployment
+In **WSL Ubuntu**:
+```bash
+kubectl get pods -l app=zero-downtime-app -o wide
+```
+- You should see exactly 2 replicas running and `Ready` (1/1).
+- Open your browser to `http://localhost:30080`.
+- Verify you see `Application Version: v1` and note the `Serving Pod` hostname. Refresh a few times to see traffic hit both pods.
+
+### STEP 10: Deploy Healthy v2
+1. In your WSL terminal, edit `app/config.json` and change the version to `"v2"`:
+   ```json
+   {
+     "version": "v2",
+     "failHealthCheck": false
+   }
    ```
-3. The Jenkins pipeline will build and deploy `v1`.
-4. Access `http://localhost:30080`. You will see `Application Version: v1`.
-
-### Demo 2: Update Application to v2
-1. Edit `app/server.js` and change `'v1'` to `'v2'`.
 2. Commit and push:
    ```bash
-   git add app/server.js
-   git commit -m "Update app to v2"
-   git push origin main
+   git add app/config.json
+   git commit -m "Deploy v2"
+   git push origin master
    ```
-3. Watch the Jenkins pipeline deploy the new version seamlessly without downtime.
-4. Refresh `http://localhost:30080` to see `v2` and a new Serving Pod hostname.
+3. Jenkins will automatically detect the push within 60 seconds and start the build.
+4. Refresh `http://localhost:30080` and watch it transition seamlessly to `v2` without dropping connections.
 
-### Demo 3: Failover (One Pod Fails)
-Demonstrate that traffic continues to be served if one replica goes down.
-1. Show running pods: `kubectl get pods`
-2. Access the application in a browser and note the "Serving Pod".
-3. Intentionally delete one pod:
+### STEP 11: Demonstrate Failover
+1. Get current pods:
    ```bash
-   kubectl delete pod <pod-name>
+   kubectl get pods -l app=zero-downtime-app
    ```
-4. Immediately refresh the browser. The application remains available, served by the remaining healthy pod.
+2. In your browser, hold refresh. 
+3. In WSL, delete one pod to simulate a failure:
+   ```bash
+   kubectl delete pod <pod-name-from-step-1>
+   ```
+4. Continue refreshing the browser. The app remains available, proving traffic is routed to the surviving healthy pod!
 
-### Demo 4: Self-Healing
-Kubernetes constantly ensures the desired state (2 replicas) is maintained.
-1. After deleting a pod in Demo 3, observe Kubernetes immediately scheduling a replacement.
-2. Watch pod status:
+### STEP 12: Demonstrate Self-Healing
+Kubernetes strictly enforces our 2-replica configuration.
+1. Watch the pod states:
    ```bash
    kubectl get pods --watch
    ```
-3. Notice that the replacement pod starts and reaches the `Running` and `Ready` states to restore the 2/2 replica count.
+2. You will see Kubernetes immediately create a new pod to replace the one you deleted, restoring full capacity automatically.
 
-### Demo 5: Broken Deployment & Automatic Rollback
-Demonstrate Jenkins detecting a bad release and rolling back to the previous working version.
-1. Introduce a fatal error in the new release by editing `app/server.js`:
-   Change `const failHealthCheck = process.env.FAIL_HEALTH_CHECK === 'true';` to `const failHealthCheck = true;` (or similar).
-2. Update the version to `v3` in the code.
-3. Commit and push:
+### STEP 13: Deploy Broken v3
+Let's intentionally deploy a fatal version to prove Jenkins auto-rollback works.
+1. Edit `app/config.json` and simulate a bad release:
+   ```json
+   {
+     "version": "v3",
+     "failHealthCheck": true
+   }
+   ```
+2. Commit and push:
    ```bash
-   git add app/server.js
+   git add app/config.json
    git commit -m "Deploy broken v3 release"
-   git push origin main
+   git push origin master
    ```
-4. **What happens:**
-   - Jenkins builds and deploys `v3`.
-   - Kubernetes attempts a rolling update. The new pod starts but its health check (`/health`) fails.
-   - Kubernetes refuses to route traffic to the broken pod.
-   - Jenkins `Verify Rollout` stage times out waiting for the deployment.
-   - Jenkins triggers the `failure` block, executing `kubectl rollout undo`.
-   - The deployment is rolled back to `v2`.
-5. **Verify Rollback:**
-   ```bash
-   kubectl rollout status deployment/zero-downtime-app
-   kubectl get pods
-   ```
-   Refresh the browser to confirm it is still serving the healthy `v2`.
 
----
+### STEP 14: Demonstrate Rollback
+1. Watch the Jenkins pipeline execution. 
+2. **What happens:** Kubernetes tries to roll out `v3`, but the new pod continuously fails its readiness probe (`/health` returns 500). Kubernetes refuses to route traffic to it, keeping `v2` pods serving traffic.
+3. Jenkins' `Verify Rollout` stage runs `kubectl rollout status` which times out after 60 seconds.
+4. Jenkins detects the failure, enters the `failure` block, and automatically runs `kubectl rollout undo deployment/zero-downtime-app`.
+5. The pipeline completes, and Kubernetes cleanly removes the bad pods.
+6. Refresh `http://localhost:30080` — it is safely back to serving `v2`!
 
-## Verification Commands
-- Check Pods: `kubectl get pods -l app=zero-downtime-app -o wide`
-- Check Service: `kubectl get svc zero-downtime-app-service`
-- Check Rollout History: `kubectl rollout history deployment/zero-downtime-app`
-
-## Troubleshooting
-- **Jenkins cannot connect to Kubernetes:** Ensure Jenkins has a valid `kubeconfig` (e.g., copied to `~/.kube/config` for the Jenkins user).
-- **Docker command not found in Jenkins:** Ensure the Jenkins runner has Docker installed or mounted correctly.
-- **ImagePullBackOff:** If using Kind, ensure the image is loaded (`kind load docker-image ...`) which is handled in the Jenkinsfile.
-
-## Cleanup
-Remove local resources:
+### STEP 15: Cleanup
+To cleanly remove all local resources, run in WSL:
 ```bash
-kubectl delete -f k8s/
+# Delete Jenkins container
+docker rm -f jenkins
+
+# Delete custom Jenkins image
+docker rmi my-jenkins
+
+# Delete Kubernetes cluster
 kind delete cluster
 ```

@@ -1,10 +1,20 @@
 const express = require('express');
 const os = require('os');
+const fs = require('fs');
 const app = express();
 
 const port = process.env.PORT || 8080;
-const version = process.env.APP_VERSION || 'v1';
-const failHealthCheck = process.env.FAIL_HEALTH_CHECK === 'true';
+
+let config = { version: 'v1', failHealthCheck: false };
+try {
+  const configData = fs.readFileSync('./config.json', 'utf8');
+  config = JSON.parse(configData);
+} catch (err) {
+  console.log('Could not read config.json, using defaults.');
+}
+
+const version = config.version;
+const failHealthCheck = config.failHealthCheck;
 
 app.get('/', (req, res) => {
   const hostname = os.hostname();

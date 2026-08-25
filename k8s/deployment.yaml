@@ -25,11 +25,6 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
-        env:
-        - name: APP_VERSION
-          value: "v1"
-        - name: FAIL_HEALTH_CHECK
-          value: "false"
         readinessProbe:
           httpGet:
             path: /health
